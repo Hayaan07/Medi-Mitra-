@@ -5,7 +5,7 @@ Run:  streamlit run healthcare_assistant.py
 
 Features
   * Basic info (name, age, gender) + current symptoms
-  * Clickable full-body diagram (front / back) to mark painful areas
+  * Interactive full-body diagram (front / back) with anatomical regions
   * Summary of potential causes, tests to confirm them, treatments & wellness tips
       - Works fully offline with a built-in knowledge base
       - Optional: add an Anthropic API key for a richer, personalised AI report
@@ -29,10 +29,8 @@ AI_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5")
 UA = {"User-Agent": "HealthcareAssistantDemo/1.0 (streamlit app)"}
 
 # ---------------------------------------------------------------------------
-# 1. BODY DIAGRAM
+# 1. INTERACTIVE BODY DIAGRAM & REGION DEFINITIONS
 # ---------------------------------------------------------------------------
-# "Right" = the person's right. In the front view that is the viewer's left.
-
 
 def sym(base, x, y, size, view):
     """Return a Right/Left pair of regions mirrored around the body's centre line."""
@@ -44,84 +42,135 @@ def sym(base, x, y, size, view):
 
 
 def regions_for(view):
+    """Define interactive clickable hotspots for anatomical regions."""
     r = []
     if view == "Front":
-        r += [("Head", 0, 9.9, 34), ("Neck", 0, 9.2, 22)]
-        r += sym("Shoulder", 1.15, 8.7, 22, view)
-        r += [("Chest", 0, 8.2, 40)]
-        r += sym("Upper Arm", 1.2, 7.6, 22, view)
-        r += [("Upper Abdomen", 0, 7.0, 36), ("Lower Abdomen", 0, 6.0, 36)]
-        r += sym("Forearm", 1.4, 5.9, 20, view)
-        r += sym("Hand", 1.45, 4.6, 20, view)
-        r += [("Pelvis / Groin", 0, 5.2, 28)]
-        r += sym("Thigh", 0.4, 4.0, 30, view)
-        r += sym("Knee", 0.4, 2.9, 22, view)
-        r += sym("Shin", 0.4, 1.7, 24, view)
-        r += sym("Foot", 0.4, 0.25, 20, view)
+        r += [("Head", 0, 9.9, 32), ("Neck", 0, 9.15, 20)]
+        r += sym("Shoulder", 1.15, 8.65, 22, view)
+        r += [("Chest", 0, 8.1, 38)]
+        r += sym("Upper Arm", 1.25, 7.5, 22, view)
+        r += [("Upper Abdomen", 0, 7.0, 34), ("Lower Abdomen", 0, 6.0, 34)]
+        r += sym("Forearm", 1.42, 5.8, 20, view)
+        r += sym("Hand", 1.5, 4.5, 20, view)
+        r += [("Pelvis / Groin", 0, 5.15, 28)]
+        r += sym("Thigh", 0.42, 3.9, 28, view)
+        r += sym("Knee", 0.42, 2.85, 22, view)
+        r += sym("Shin", 0.42, 1.65, 24, view)
+        r += sym("Foot", 0.45, 0.3, 20, view)
     else:
-        r += [("Back of Head", 0, 9.9, 34), ("Back of Neck", 0, 9.2, 22)]
-        r += sym("Shoulder Blade", 0.55, 8.4, 26, view)
-        r += [("Upper Back", 0, 8.2, 24), ("Mid Back", 0, 7.0, 40), ("Lower Back", 0, 5.9, 40)]
-        r += sym("Back of Arm", 1.25, 7.0, 24, view)
-        r += sym("Forearm", 1.4, 5.7, 20, view)
-        r += sym("Hand", 1.45, 4.6, 20, view)
-        r += [("Buttocks", 0, 5.0, 34)]
-        r += sym("Hamstring", 0.4, 3.7, 30, view)
-        r += sym("Knee", 0.4, 2.8, 20, view)
-        r += sym("Calf", 0.4, 1.7, 26, view)
-        r += sym("Heel", 0.4, 0.25, 20, view)
+        r += [("Back of Head", 0, 9.9, 32), ("Back of Neck", 0, 9.15, 20)]
+        r += sym("Shoulder Blade", 0.6, 8.4, 24, view)
+        r += [("Upper Back", 0, 8.3, 24), ("Mid Back", 0, 7.1, 36), ("Lower Back", 0, 5.9, 36)]
+        r += sym("Back of Arm", 1.25, 7.0, 22, view)
+        r += sym("Forearm", 1.42, 5.7, 20, view)
+        r += sym("Hand", 1.5, 4.5, 20, view)
+        r += [("Buttocks", 0, 4.95, 34)]
+        r += sym("Hamstring", 0.42, 3.75, 28, view)
+        r += sym("Knee", 0.42, 2.8, 20, view)
+        r += sym("Calf", 0.42, 1.65, 26, view)
+        r += sym("Heel", 0.42, 0.3, 20, view)
     return r
 
 
 def body_figure(view, selected):
+    """Generates an interactive Plotly vector figure with accurate body outline and custom markers."""
     fig = go.Figure()
-    fill, line = "rgba(150,160,175,0.18)", "rgba(120,130,145,0.9)"
+    
+    # Visual Styling
+    body_fill = "rgba(226, 232, 240, 0.65)"
+    body_line = "rgba(71, 85, 105, 0.85)"
+    grid_line = "rgba(148, 163, 184, 0.3)"
+
+    def path_shape(path_svg):
+        fig.add_shape(type="path", path=path_svg, line=dict(color=body_line, width=1.8),
+                      fillcolor=body_fill, layer="below")
 
     def rect(x0, y0, x1, y1):
         fig.add_shape(type="rect", x0=x0, y0=y0, x1=x1, y1=y1,
-                      line=dict(color=line, width=1.5), fillcolor=fill, layer="below")
+                      line=dict(color=body_line, width=1.5), fillcolor=body_fill, layer="below")
 
-    # head
-    fig.add_shape(type="circle", x0=-0.5, y0=9.35, x1=0.5, y1=10.45,
-                  line=dict(color=line, width=1.5), fillcolor=fill, layer="below")
-    rect(-0.17, 9.0, 0.17, 9.4)  # neck
-    # torso + hips
-    fig.add_shape(type="path",
-                  path="M -0.95 9.0 L 0.95 9.0 L 0.8 5.0 L 0.85 4.8 L -0.85 4.8 L -0.8 5.0 Z",
-                  line=dict(color=line, width=1.5), fillcolor=fill, layer="below")
+    # Anatomical silhouette outlines
+    # Head & Neck
+    fig.add_shape(type="circle", x0=-0.52, y0=9.3, x1=0.52, y1=10.45,
+                  line=dict(color=body_line, width=1.8), fillcolor=body_fill, layer="below")
+    rect(-0.18, 8.95, 0.18, 9.35)
+
+    # Torso & Hips
+    path_shape("M -0.95 8.95 L 0.95 8.95 L 0.82 4.9 L 0.88 4.7 L -0.88 4.7 L -0.82 4.9 Z")
+
+    # Arms and Legs
     for s in (-1, 1):
-        rect(min(s * 1.0, s * 1.4), 6.9, max(s * 1.0, s * 1.4), 8.9)      # upper arm
-        rect(min(s * 1.2, s * 1.6), 5.0, max(s * 1.2, s * 1.6), 6.8)      # forearm
-        fig.add_shape(type="circle", x0=s * 1.45 - 0.22, y0=4.25, x1=s * 1.45 + 0.22, y1=4.95,
-                      line=dict(color=line, width=1.5), fillcolor=fill, layer="below")  # hand
-        rect(min(s * 0.05, s * 0.75), 2.9, max(s * 0.05, s * 0.75), 4.8)  # thigh
-        rect(min(s * 0.15, s * 0.65), 0.6, max(s * 0.15, s * 0.65), 2.8)  # shin
-        rect(min(s * 0.12, s * 0.7), 0.0, max(s * 0.12, s * 0.7), 0.5)    # foot
+        rect(min(s * 1.0, s * 1.4), 6.85, max(s * 1.0, s * 1.4), 8.85)     # Upper arm
+        rect(min(s * 1.2, s * 1.58), 4.95, max(s * 1.2, s * 1.58), 6.75)   # Forearm
+        fig.add_shape(type="circle", x0=s * 1.48 - 0.22, y0=4.15, x1=s * 1.48 + 0.22, y1=4.88,
+                      line=dict(color=body_line, width=1.5), fillcolor=body_fill, layer="below") # Hand
+        rect(min(s * 0.08, s * 0.74), 2.9, max(s * 0.08, s * 0.74), 4.7)   # Thigh
+        rect(min(s * 0.16, s * 0.66), 0.65, max(s * 0.16, s * 0.66), 2.8)  # Shin / Calf
+        rect(min(s * 0.12, s * 0.72), 0.05, max(s * 0.12, s * 0.72), 0.55) # Foot
 
     regs = regions_for(view)
-    colors = ["rgba(229,57,53,0.9)" if n in selected else "rgba(30,136,229,0.35)" for n, *_ in regs]
+    
+    # Styling node states
+    colors = []
+    line_colors = []
+    line_widths = []
+    hover_texts = []
+    
+    for n, *_ in regs:
+        is_sel = n in selected
+        colors.append("rgba(239, 68, 68, 0.9)" if is_sel else "rgba(14, 165, 233, 0.45)")
+        line_colors.append("#B91C1C" if is_sel else "#0284C7")
+        line_widths.append(2.5 if is_sel else 1.2)
+        hover_texts.append(f"<b>{'🔴 ' if is_sel else '🔵 '}{n}</b><br>Click to toggle selection")
+
     fig.add_trace(go.Scatter(
-        x=[r[1] for r in regs], y=[r[2] for r in regs], mode="markers",
-        customdata=[r[0] for r in regs], text=[r[0] for r in regs],
-        hovertemplate="<b>%{text}</b><br>Click to mark / unmark<extra></extra>",
-        marker=dict(size=[r[3] for r in regs], color=colors,
-                    line=dict(color="white", width=1.5)),
-        selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=1)),
+        x=[r[1] for r in regs],
+        y=[r[2] for r in regs],
+        mode="markers+text",
+        text=[r[0] if r[0] in selected else "" for r in regs],
+        textposition="top center",
+        textfont=dict(size=11, color="#1E293B", family="sans-serif"),
+        customdata=[r[0] for r in regs],
+        hovertext=hover_texts,
+        hovertemplate="%{hovertext}<extra></extra>",
+        marker=dict(
+            size=[r[3] for r in regs],
+            color=colors,
+            line=dict(color=line_colors, width=line_widths),
+            opacity=0.92
+        ),
+        selected=dict(marker=dict(opacity=1)),
+        unselected=dict(marker=dict(opacity=0.92)),
     ))
-    fig.add_annotation(x=0, y=10.9, text=f"<b>{view} view</b>", showarrow=False)
+
+    # Title & View annotation
+    fig.add_annotation(
+        x=0, y=10.95,
+        text=f"<b>Interactive Map — {view} View</b>",
+        showarrow=False,
+        font=dict(size=15, color="#0F172A")
+    )
+
     fig.update_xaxes(visible=False, range=[-2.2, 2.2], fixedrange=True)
-    fig.update_yaxes(visible=False, range=[-0.3, 11.2], fixedrange=True, scaleanchor="x")
-    fig.update_layout(height=620, margin=dict(l=0, r=0, t=0, b=0), showlegend=False,
-                      dragmode="select", paper_bgcolor="rgba(0,0,0,0)",
-                      plot_bgcolor="rgba(0,0,0,0)", clickmode="event+select")
+    fig.update_yaxes(visible=False, range=[-0.2, 11.3], fixedrange=True, scaleanchor="x")
+    fig.update_layout(
+        height=630,
+        margin=dict(l=10, r=10, t=10, b=10),
+        showlegend=False,
+        dragmode="select",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        clickmode="event+select"
+    )
     return fig
 
 
 def show_chart(fig, key):
+    """Render interactive chart and capture select events with backwards compatibility."""
     import inspect
     params = inspect.signature(st.plotly_chart).parameters
     if "on_select" not in params:
-        return None  # very old Streamlit: use the list picker instead
+        return None
     kw = dict(key=key, on_select="rerun", selection_mode="points", config={"displayModeBar": False})
     if "width" in params:
         kw["width"] = "stretch"
@@ -131,7 +180,7 @@ def show_chart(fig, key):
 
 
 def clicked_names(event, view):
-    """Extract clicked region names from a Streamlit plotly selection event (robust to format changes)."""
+    """Extract selected region names from Plotly interaction events."""
     try:
         pts = event.selection.points
     except Exception:
@@ -155,7 +204,6 @@ def clicked_names(event, view):
 
 
 ALL_REGIONS = list(dict.fromkeys([r[0] for v in ("Front", "Back") for r in regions_for(v)]))
-
 
 # ---------------------------------------------------------------------------
 # 2. KNOWLEDGE BASE  (name, likelihood, why, tests, self-care)
@@ -632,11 +680,11 @@ gender = c3.selectbox("Gender", ["Female", "Male", "Non-binary / Other", "Prefer
 
 # ---- Step 2: body diagram
 st.header("2️⃣ Where does it hurt?")
-st.caption("Click the blue dots on the body to mark painful or uncomfortable areas (click a red dot again to unmark). "
-           "You can also drag to select several dots at once.")
+st.caption("Click any point on the body diagram below to mark or unmark affected areas. "
+           "Selected areas will light up in red with labels.")
 left, right = st.columns([1, 1])
 with left:
-    view = st.radio("View", ["Front", "Back"], horizontal=True, key="view")
+    view = st.radio("View Perspective", ["Front", "Back"], horizontal=True, key="view")
     chart_key = f"body_{view}_{st.session_state.chart_n}"
     event = show_chart(body_figure(view, set(st.session_state.regions)), chart_key)
     clicked = clicked_names(event, view)
@@ -646,26 +694,29 @@ with left:
                 st.session_state.regions.remove(n)
             else:
                 st.session_state.regions.append(n)
-        st.session_state.chart_n += 1  # reset chart selection so each click is fresh
+        st.session_state.chart_n += 1  # reset chart selection state
         st.rerun()
     if event is None:
-        st.warning("Your Streamlit version doesn't support clickable charts. "
-                   "Run `pip install -U streamlit` – or use the list picker on the right.")
+        st.warning("Your Streamlit version doesn't support interactive point selection. "
+                   "Update Streamlit (`pip install -U streamlit`) or use the multi-select box on the right.")
 
 with right:
-    st.subheader("Selected areas")
-    st.caption("Clicking the diagram adds/removes areas here. You can also pick them from this list.")
+    st.subheader("Selected Body Regions")
+    st.caption("Interact with the map or manage selected body parts directly in this list:")
     chosen = st.multiselect("Body areas", ALL_REGIONS, default=st.session_state.regions,
                             key=f"ms_{st.session_state.chart_n}", label_visibility="collapsed",
-                            placeholder="Choose body areas…")
+                            placeholder="Select regions...")
     if set(chosen) != set(st.session_state.regions):
         st.session_state.regions = list(chosen)
         st.session_state.chart_n += 1
         st.rerun()
-    if st.session_state.regions and st.button("Clear all"):
-        st.session_state.regions = []
-        st.session_state.chart_n += 1
-        st.rerun()
+        
+    if st.session_state.regions:
+        st.info(f"📍 **{len(st.session_state.regions)}** region(s) selected.")
+        if st.button("🗑️ Clear All Regions"):
+            st.session_state.regions = []
+            st.session_state.chart_n += 1
+            st.rerun()
 
     # ---- Step 3: symptoms
     st.header("3️⃣ Current symptoms")
