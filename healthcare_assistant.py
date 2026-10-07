@@ -118,12 +118,43 @@ def body_figure(view, selected):
 
 
 def show_chart(fig, key):
+    import inspect
+    params = inspect.signature(st.plotly_chart).parameters
+    if "on_select" not in params:
+        return None  # very old Streamlit: use the list picker instead
+    kw = dict(key=key, on_select="rerun", selection_mode="points", config={"displayModeBar": False})
+    if "width" in params:
+        kw["width"] = "stretch"
+    else:
+        kw["use_container_width"] = True
+    return st.plotly_chart(fig, **kw)
+
+
+def clicked_names(event, view):
+    """Extract clicked region names from a Streamlit plotly selection event (robust to format changes)."""
     try:
-        return st.plotly_chart(fig, key=key, on_select="rerun", selection_mode="points",
-                               width="stretch", config={"displayModeBar": False})
-    except TypeError:  # older Streamlit versions
-        return st.plotly_chart(fig, key=key, on_select="rerun", selection_mode="points",
-                               use_container_width=True, config={"displayModeBar": False})
+        pts = event.selection.points
+    except Exception:
+        try:
+            pts = event["selection"]["points"]
+        except Exception:
+            return []
+    names_in_view = [r[0] for r in regions_for(view)]
+    out = []
+    for pt in pts or []:
+        n = pt.get("customdata") or pt.get("text")
+        if isinstance(n, (list, tuple)):
+            n = n[0] if n else None
+        if not n:
+            idx = pt.get("point_index", pt.get("point_number"))
+            if isinstance(idx, int) and 0 <= idx < len(names_in_view):
+                n = names_in_view[idx]
+        if n:
+            out.append(n)
+    return out
+
+
+ALL_REGIONS = list(dict.fromkeys([r[0] for v in ("Front", "Back") for r in regions_for(v)]))
 
 
 # ---------------------------------------------------------------------------
@@ -608,38 +639,33 @@ with left:
     view = st.radio("View", ["Front", "Back"], horizontal=True, key="view")
     chart_key = f"body_{view}_{st.session_state.chart_n}"
     event = show_chart(body_figure(view, set(st.session_state.regions)), chart_key)
-    pts = []
-    try:
-        pts = event.selection.points if event and event.selection else []
-    except AttributeError:
-        pts = (event or {}).get("selection", {}).get("points", [])
-    if pts:
-        for pt in pts:
-            n = pt.get("customdata")
-            n = n[0] if isinstance(n, (list, tuple)) else n
-            if n:
-                if n in st.session_state.regions:
-                    st.session_state.regions.remove(n)
-                else:
-                    st.session_state.regions.append(n)
+    clicked = clicked_names(event, view)
+    if clicked:
+        for n in clicked:
+            if n in st.session_state.regions:
+                st.session_state.regions.remove(n)
+            else:
+                st.session_state.regions.append(n)
         st.session_state.chart_n += 1  # reset chart selection so each click is fresh
         st.rerun()
+    if event is None:
+        st.warning("Your Streamlit version doesn't support clickable charts. "
+                   "Run `pip install -U streamlit` – or use the list picker on the right.")
 
 with right:
     st.subheader("Selected areas")
-    if st.session_state.regions:
-        chosen = st.multiselect("Remove an area by clicking ✕", st.session_state.regions,
-                                default=st.session_state.regions, key=f"ms_{st.session_state.chart_n}")
-        if set(chosen) != set(st.session_state.regions):
-            st.session_state.regions = [r for r in st.session_state.regions if r in chosen]
-            st.session_state.chart_n += 1
-            st.rerun()
-        if st.button("Clear all"):
-            st.session_state.regions = []
-            st.session_state.chart_n += 1
-            st.rerun()
-    else:
-        st.info("No area selected yet. Click on the diagram.")
+    st.caption("Clicking the diagram adds/removes areas here. You can also pick them from this list.")
+    chosen = st.multiselect("Body areas", ALL_REGIONS, default=st.session_state.regions,
+                            key=f"ms_{st.session_state.chart_n}", label_visibility="collapsed",
+                            placeholder="Choose body areas…")
+    if set(chosen) != set(st.session_state.regions):
+        st.session_state.regions = list(chosen)
+        st.session_state.chart_n += 1
+        st.rerun()
+    if st.session_state.regions and st.button("Clear all"):
+        st.session_state.regions = []
+        st.session_state.chart_n += 1
+        st.rerun()
 
     # ---- Step 3: symptoms
     st.header("3️⃣ Current symptoms")
